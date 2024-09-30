@@ -308,6 +308,63 @@ function json_download_quilt {
     rm quilt-installer.jar
 }
 
+NEOFORGE_INSTALLER_URL="https://maven.neoforged.net/releases/net/neoforged/neoforge/"
+
+function json_download_neoforge {
+    echo "Downloading NeoForge..."
+
+    local MANIFEST="${SERVER_DIR}/modrinth.index.json"
+
+    local MC_VERSION=$(jq -r '.dependencies.minecraft // empty' "${MANIFEST}")
+    local NEOFORGE_VERSION=$(jq -r '.dependencies.neoforge // empty' "${MANIFEST}")
+
+    if [[ -z "${MC_VERSION}" ]]; then
+        echo -e "\tERROR: No Minecraft version found in manifest '${MANIFEST}'"
+        exit 1
+    fi
+
+    if [[ -z "${NEOFORGE_VERSION}" ]]; then
+        echo -e "\tERROR: No NeoForge version found in manifest '${MANIFEST}'"
+        exit 1
+    fi
+
+    local DOWNLOAD_LINK
+    local ARTIFACT_NAME
+
+    # The 1.20.1 release lives in a different repository and is called "forge" instead of "neoforge"
+    if [[ "${MC_VERSION}" == "1.20.1" ]]; then
+        DOWNLOAD_LINK="https://maven.neoforged.net/releases/net/neoforged/forge/${MC_VERSION}-${NEOFORGE_VERSION}/forge-${MC_VERSION}-${NEOFORGE_VERSION}"
+        ARTIFACT_NAME="forge"
+    else
+        DOWNLOAD_LINK="https://maven.neoforged.net/releases/net/neoforged/neoforge/${NEOFORGE_VERSION}/neoforge-${NEOFORGE_VERSION}"
+        ARTIFACT_NAME="neoforge"
+    fi
+
+    echo -e "\tDownloading NeoForge Installer ${NEOFORGE_VERSION} from ${DOWNLOAD_LINK}-installer.jar"
+
+    if ! wget -q -O neoforge-installer.jar "${DOWNLOAD_LINK}-installer.jar"; then
+        echo -e "\tERROR: Failed to download NeoForge Installer ${NEOFORGE_VERSION}"
+        exit 1
+    fi
+
+    # Remove old NeoForge files so we can safely update
+    rm -rf libraries/net/neoforged/${ARTIFACT_NAME}/
+    rm -f unix_args.txt
+
+    # Install the NeoForge server
+    echo -e "\tInstalling NeoForge Server ${NEOFORGE_VERSION}"
+    if ! java -jar neoforge-installer.jar --installServer > /dev/null 2>&1; then
+        echo -e "\tERROR: Failed to install NeoForge Server ${NEOFORGE_VERSION}"
+        exit 1
+    fi
+
+    # Symlink the startup arguments to the server directory
+    echo -e "\tSetting up NeoForge Unix arguments"
+    ln -sf libraries/net/neoforged/${ARTIFACT_NAME}/*/unix_args.txt unix_args.txt
+
+    rm -f neoforge-installer.jar
+}
+
 install_required
 
 if [[ -z "${PROJECT_ID}" ]]; then
@@ -341,6 +398,10 @@ if [[ -f "${SERVER_DIR}/modrinth.index.json" ]]; then
 
     if [[ $(jq -r '.dependencies."quilt-loader"' "${MANIFEST}") != "null" ]]; then
         json_download_quilt
+    fi
+    
+    if [[ $(jq -r '.dependencies."neoforge"' "${MANIFEST}") != "null" ]]; then
+        json_download_neoforge
     fi
 fi
 
